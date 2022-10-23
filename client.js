@@ -82,7 +82,8 @@ class Session {
                     player_nickname = message.player_nickname;
 
                     Game.submissions[player_nickname].code = code;
-
+                    
+                    // Update submissions list
                     break;
 
                 case MessageRecvID.test_results:
