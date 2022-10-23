@@ -38,6 +38,7 @@ class MessageRecvID(IntEnum):
     submit_code = 0
     run_test = 1
     update_code = 2
+    get_code = 3
 
 class MessageSendID(IntEnum):
     game_info = 0
@@ -115,8 +116,8 @@ class Submission:
 
     def as_dict(self):
         return {
-            "code": self.code,
-            "language": self.language.name,
+            "code_length": len(self.code),
+            "language": Language.name,
             "success": self.success,
             "state": self.state.name,
             "finished_time": self.finished_time
@@ -187,6 +188,7 @@ class Game:
     async def game_loop(cls):
         # random puzzle for init \-o-/ -_-
         cls.puzzle = choice(Puzzle.puzzles) 
+        
 
         while 1:
             # First game shouldn't instantly start
@@ -211,6 +213,10 @@ class Game:
 
     @classmethod
     async def join(cls, player: Player):
+        if any(player_.nickname == player.nickname for player_ in cls.submissions):
+            await player.send_error("Nickname was taken")
+            raise ValueError
+
         cls.players.append(player)
         cls.submissions[player] = Submission()
         await player.send(cls.game_info_message())
@@ -235,8 +241,7 @@ class Game:
         # TODO: put this in submission? who cares!
         submission = cls.submissions[player]
         if submission.state is not SubmissionState.in_progess:
-            # TODO: send an error
-            return
+            raise SessionException("Can't submit: Already submitted!")
 
         submission.finished_time = time()
         submission.state = SubmissionState.pending
@@ -261,13 +266,28 @@ class Game:
 
     @classmethod
     async def update_code(cls, player: Player, code: str, language: Language):
+        if Game.state is not GameState.in_progress:
+            raise SessionException("Can't test code: Game already ended")
+
         cls.submissions[player].code = code
         cls.submissions[player].language = language
+
+    @classmethod
+    async def get_code(cls, player: Player, submission_owner_nickname: str):
+        if cls.submissions[player].state is SubmissionState.in_progess:
+            raise SessionException("Can't get code: You need to submit first")
+
+        for player_, submission in cls.submissions.items():
+            if player_.nickname == submission_owner_nickname:
+                return submission.code
+
+        raise SessionException("Can't get code: No player with such nickname")
 
     @classmethod
     async def broadcast(cls, message: object):
         for player in cls.players:
             await player.send(message)
+
 
 class SessionException(Exception):
     pass
@@ -283,6 +303,7 @@ class Player:
     async def __auth(self):
         message = await self.recv()
         if message.keys() != {"nickname"}:
+            await self.send_error("Wrong message structure")
             raise ValueError
 
         self.nickname = message["nickname"]
@@ -294,12 +315,15 @@ class Player:
         message_dict = json.loads(message)
 
         if not isinstance(message_dict,dict):
-            raise SessionException("Wrong message type")
+            raise SessionException("Wrong message structure")
 
         return message_dict
 
     async def send(self, message: object):
         await self.send(json.dumps(message))
+
+    async def send_error(self, error_messege: str):
+        await self.send({"id":MessageSendID.error_message, "error": error_messege})
 
     async def ws_handler(self):
         try:
@@ -309,7 +333,7 @@ class Player:
 
                     if message["id"] is MessageRecvID.submit_code:
                         if message.keys() != {"id", "code", "language"}:
-                            raise SessionException("Wrong message type")
+                            raise SessionException("Wrong message structure")
 
                         if Game.state is not GameState.in_progress:
                             raise SessionException("Can't submit: Game is already ended")
@@ -319,25 +343,25 @@ class Player:
 
                     elif message["id"] is MessageRecvID.run_test:
                         if message.keys() != {"id", "code", "language"}:
-                            raise SessionException("Wrong message type")
-
-                        if Game.state is not GameState.in_progress:
-                            raise SessionException("Can't test code: Game is already ended")
+                            raise SessionException("Wrong message structure")
                             
                         await Game.update_code(self, message["code"], Language.get(message["language"]))
                         await Game.run_test(self)
 
                     elif message["id"] is MessageRecvID.update_code:
                         if message.keys() != {"id", "code", "language"}:
-                            raise SessionException("Wrong message type")
-
-                        if Game.state is not GameState.in_progress:
-                            raise SessionException("Can't update code: Game is already ended")
+                            raise SessionException("Wrong message structure")
                         
                         await Game.update_code(self, message["code"], Language.get(message["language"]))
 
+                    elif message["id"] is MessageRecvID.get_code:
+                        if message.keys() != {"id", "player_nickname"}:
+                            raise SessionException("Wrong message struture")
+
+                        await Game.get_code(self, message["player_nickname"])
+
                 except SessionException as e:
-                    await self.send({"id":MessageSendID.error_message,"error": str(e)})
+                    await self.send_error(str(e))
 
         except Exception as e:
             # XXX: LOG ?
