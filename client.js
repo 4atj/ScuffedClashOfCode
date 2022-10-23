@@ -43,9 +43,9 @@ class Session {
     static connenct() {
         if (this.ws !== null && (
             this.ws.readyState === WebSocket.OPEN ||
-            this.ws === WebSocket.CONNECTING)) 
+            this.ws.readyState === WebSocket.CONNECTING))
             
-            this.ws.close(); 
+            this.ws.close();            
         
         this.ws = new WebSocket("ws://127.0.0.1:8080");
 
