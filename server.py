@@ -186,9 +186,8 @@ class Game:
 
     @classmethod
     async def game_loop(cls):
-        # random puzzle for init \-o-/ -_-
-        cls.puzzle = choice(Puzzle.puzzles) 
-        
+        # Put random puzzle as the previous puzzle although there is no previous puzzle!
+        cls.puzzle = choice(Puzzle.puzzles)
 
         while 1:
             # First game shouldn't instantly start
