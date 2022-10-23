@@ -34,6 +34,11 @@ class SubmissionState(IntEnum):
     pending = 1
     finished = 2
 
+class GameState(IntEnum):
+    in_progress = 1
+    finishing = 2
+    finished = 3
+
 class MessageRecvID(IntEnum):
     submit_code = 0
     run_test = 1
@@ -46,11 +51,6 @@ class MessageSendID(IntEnum):
     error_message = 2
     test_results = 3
     game_end = 4
-
-class GameState(IntEnum):
-    in_progress = 1
-    finishing = 2
-    finished = 3
 
 class Language:
     languages: ClassVar[dict[str, Language]] = {}
@@ -175,14 +175,17 @@ class Puzzle:
             }
 
 class Game:
-    players: ClassVar[list[Player]] = []
-    submissions: ClassVar[dict[Player, Submission]] = {}
-    puzzle: ClassVar[Puzzle]
     duration_between_games: ClassVar[int] = 60
     duration: ClassVar[int] = 600
+
+    players: ClassVar[list[Player]] = []
+
+    state: ClassVar[GameState]
     start_time: ClassVar[int]
     end_time: ClassVar[int]
-    state: ClassVar[GameState]
+    submissions: ClassVar[dict[Player, Submission]] = {}
+    puzzle: ClassVar[Puzzle]
+    
 
     @classmethod
     async def game_loop(cls):
@@ -195,7 +198,7 @@ class Game:
             cls.state = GameState.finished
             cls.start_time = int(time() + cls.duration_between_games)
             cls.end_time = int(cls.start_time + cls.duration)
-            await cls.broadcast({"id": MessageSendID.game_end, "time_until_next_game": cls.start_time})
+            await cls.broadcast({"id": MessageSendID.game_end, "next_game_start_time": cls.start_time})
             await asyncio.sleep(cls.duration_between_games)
             
             cls.state = GameState.in_progress
@@ -212,23 +215,35 @@ class Game:
 
     @classmethod
     async def join(cls, player: Player):
-        if any(player_.nickname == player.nickname for player_ in cls.submissions):
-            await player.send_error("Nickname was taken")
-            raise ValueError
+        player_ = next(player_ for player_ in cls.submissions if player_.nickname == player.nickname)
+
+        if player_:
+            if player_.token != player.token:
+                await player.send_error("Nickname was taken!")
+                raise ValueError
+            
+            cls.submissions[player] = cls.submissions.pop(player_)
+            
+            if player_ in cls.players:
+                cls.players.remove(player_)
+                await player.send_error("Another session was connected to this player!")
+                await player.ws.close()
+        else:
+            cls.submissions[player] = Submission()
 
         cls.players.append(player)
-        cls.submissions[player] = Submission()
         await player.send(cls.game_info_message())
 
     @classmethod
     async def game_info_message(cls):
         return {
-            "id": MessageSendID.game_info, 
+            "id": MessageSendID.game_info,
+            "available_languages": [language.as_dict() for language in Language.languages.values()],
+            "state": cls.state,
+            "start_time": cls.start_time,
+            "end_time": cls.end_time,
             "submissions": {player.nickname: submission.as_dict() for player, submission in cls.submissions.items()},
             "puzzle": cls.puzzle.as_dict(),
-            "end_time": cls.end_time,
-            "delay_between_games": cls.duration_between_games,
-            "available_languages": [language.as_dict() for language in Language.languages.values()]
         }
 
     @classmethod
@@ -244,13 +259,13 @@ class Game:
 
         submission.finished_time = time()
         submission.state = SubmissionState.pending
-        await cls.broadcast({"id": MessageSendID.submission_info, "player": player.nickname, "submission": submission.as_dict()})
+        await cls.broadcast({"id": MessageSendID.submission_info, "player_nickname": player.nickname, "submission": submission.as_dict()})
 
         for validator in cls.puzzle.validators:
             success, output = validator.execute(submission.code, submission.language)
             submission.success.append(success)
         submission.state = SubmissionState.finished
-        await cls.broadcast({"id": MessageSendID.submission_info, "player": player.nickname, "submission": submission.as_dict()})
+        await cls.broadcast({"id": MessageSendID.submission_info, "player_nickname": player.nickname, "submission": submission.as_dict()})
 
     @classmethod
     async def run_test(cls, player: Player):
@@ -294,17 +309,22 @@ class SessionException(Exception):
 class Player:
     ws: WebsocketImplProtocol
     nickname: str
+    token: str
     
     def __init__(self, ws: WebsocketImplProtocol):
         self.ws = ws
-        asyncio.run(self.__auth())
+        asyncio.run(self.handshake())
         
-    async def __auth(self):
+    async def handshake(self):
         message = await self.recv()
-        if message.keys() != {"nickname"}:
+
+        # Didn't give id to handshake!
+        if message.keys() != {"nickname","token"} or\
+           any(not isinstance(v, str) for v in message.values()):
             await self.send_error("Wrong message structure")
             raise ValueError
 
+        self.token = message["token"]
         self.nickname = message["nickname"]
         await Game.join(self)
 
@@ -316,13 +336,19 @@ class Player:
         if not isinstance(message_dict,dict):
             raise SessionException("Wrong message structure")
 
+        print("recieved a message", message)
+
         return message_dict
 
     async def send(self, message: object):
-        await self.send(json.dumps(message))
+        try:
+            await self.send(json.dumps(message))
+        except:
+            # TODO: handle exceptions
+            pass
 
     async def send_error(self, error_messege: str):
-        await self.send({"id":MessageSendID.error_message, "error": error_messege})
+        await self.send({"id":MessageSendID.error_message, "error_message": error_messege})
 
     async def ws_handler(self):
         try:
@@ -331,7 +357,8 @@ class Player:
                     message = await self.recv()
 
                     if message["id"] is MessageRecvID.submit_code:
-                        if message.keys() != {"id", "code", "language"}:
+                        if message.keys() != {"id", "code", "language"} or\
+                           any(not isinstance(v, str) for v in message.values()):
                             raise SessionException("Wrong message structure")
 
                         if Game.state is not GameState.in_progress:
@@ -341,20 +368,23 @@ class Player:
                         await Game.submit_code(self)
 
                     elif message["id"] is MessageRecvID.run_test:
-                        if message.keys() != {"id", "code", "language"}:
+                        if message.keys() != {"id", "code", "language"}or\
+                           any(not isinstance(v, str) for v in message.values()):
                             raise SessionException("Wrong message structure")
                             
                         await Game.update_code(self, message["code"], Language.get(message["language"]))
                         await Game.run_test(self)
 
                     elif message["id"] is MessageRecvID.update_code:
-                        if message.keys() != {"id", "code", "language"}:
+                        if message.keys() != {"id", "code", "language"}or\
+                           any(not isinstance(v, str) for v in message.values()):
                             raise SessionException("Wrong message structure")
                         
                         await Game.update_code(self, message["code"], Language.get(message["language"]))
 
                     elif message["id"] is MessageRecvID.get_code:
-                        if message.keys() != {"id", "player_nickname"}:
+                        if message.keys() != {"id", "player_nickname"}or\
+                           any(not isinstance(v, str) for v in message.values()):
                             raise SessionException("Wrong message struture")
 
                         await Game.get_code(self, message["player_nickname"])
@@ -374,9 +404,11 @@ def start():
     if app.state.stage is not ServerStage.STOPPED:
         raise Exception("App is already running!")
 
-    print("GameCodin is running on http://localhost:8080/")
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     loop.create_task(Game.game_loop())
+
+    print("GameCodin is running on http://localhost:8080/")
     app.run(host="0.0.0.0", port=8080, workers=1, debug=True, verbosity=1, access_log=False)
 
 if __name__ == "__main__":
