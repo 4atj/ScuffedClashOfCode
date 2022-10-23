@@ -21,7 +21,6 @@ from typing import Final
 piston: Final = PistonAPI()
 app: Final = Sanic("GAME", log_config={"version": 1})
 
-app.config.WEBSOCKET_MAX_SIZE = 128
 app.config.WEBSOCKET_PING_INTERVAL = None  # type: ignore
 app.config.WEBSOCKET_PING_TIMEOUT = None  # type: ignore
 
