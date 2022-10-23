@@ -5,16 +5,16 @@ MessageSendID = {
     submit_code: 0,
     run_test: 1,
     update_code: 2,
-    get_code: 3,
+    get_submission_code: 3,
 }
 
 MessageRecvID = {
     game_info: 0,
     submission_info: 1,
-    error_message: 2,
+    submission_code: 2,
     test_results: 3,
     game_end: 4,
-    kicked: 5,
+    error_message: 5
 }
 
 SubmissionState = {
@@ -70,15 +70,23 @@ class Session {
                     break;
                     
                 case MessageRecvID.submission_info:
-                    let player_nickname = message.player,
+                    let player_nickname = message.player_nickname,
                         submission = message.submission;
 
                     Game.submissions[player_nickname] = submission;
                     // Update submissions list
                     break;
 
+                case MessageRecvID.submission_code:
+                    let code = message.submission;
+                    player_nickname = message.player_nickname;
+
+                    Game.submissions[player_nickname].code = code;
+
+                    break;
+
                 case MessageRecvID.test_results:
-                    let success = message.success;
+                    let results = message.results;
                     // update testcases success
                     break;
 

@@ -43,14 +43,15 @@ class MessageRecvID(IntEnum):
     submit_code = 0
     run_test = 1
     update_code = 2
-    get_code = 3
+    get_submission_code = 3
 
 class MessageSendID(IntEnum):
     game_info = 0
     submission_info = 1
-    error_message = 2
+    submission_code = 2
     test_results = 3
     game_end = 4
+    error_message = 5
 
 class Language:
     languages: ClassVar[dict[str, Language]] = {}
@@ -274,9 +275,9 @@ class Game:
         results = []
         submission = cls.submissions[player]
         for validator in cls.puzzle.testcases:
-            success, output = validator.execute(submission.code, submission.language)
-            results.append(success)
-        await player.send({"id":MessageSendID.test_results, "success": results})
+            result = validator.execute(submission.code, submission.language)
+            results.append(result)
+        await player.send({"id":MessageSendID.test_results, "results": results})
 
     @classmethod
     async def update_code(cls, player: Player, code: str, language: Language):
@@ -287,13 +288,14 @@ class Game:
         cls.submissions[player].language = language
 
     @classmethod
-    async def get_code(cls, player: Player, submission_owner_nickname: str):
+    async def get_submission_code(cls, player: Player, submission_owner_nickname: str):
         if cls.submissions[player].state is SubmissionState.in_progess:
             raise SessionException("Can't get code: You need to submit first")
 
         for player_, submission in cls.submissions.items():
             if player_.nickname == submission_owner_nickname:
-                return submission.code
+                await player.send({"id": MessageSendID.submission_code, "player_nickname": player.nickname, "code": submission.code})
+                return
 
         raise SessionException("Can't get code: No player with such nickname")
 
@@ -382,12 +384,12 @@ class Player:
                         
                         await Game.update_code(self, message["code"], Language.get(message["language"]))
 
-                    elif message["id"] is MessageRecvID.get_code:
+                    elif message["id"] is MessageRecvID.get_submission_code:
                         if message.keys() != {"id", "player_nickname"}or\
                            any(not isinstance(v, str) for v in message.values()):
                             raise SessionException("Wrong message struture")
 
-                        await Game.get_code(self, message["player_nickname"])
+                        await Game.get_submission_code(self, message["player_nickname"])
 
                 except SessionException as e:
                     await self.send_error(str(e))
