@@ -1,0 +1,2 @@
+sanic~=22.6.0 
+istonapi~=1.0.1
