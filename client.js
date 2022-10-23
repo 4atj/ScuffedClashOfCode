@@ -2,117 +2,132 @@
 // But who cares, lets leave them like this.
 
 MessageSendID = {
-    submit_code: 0,
-    run_test: 1,
-    update_code: 2,
-    get_submission_code: 3,
-}
+  submit_code: 0,
+  run_test: 1,
+  update_code: 2,
+  get_submission_code: 3,
+};
 
 MessageRecvID = {
-    game_info: 0,
-    submission_info: 1,
-    submission_code: 2,
-    test_results: 3,
-    game_end: 4,
-    error_message: 5
-}
+  game_info: 0,
+  submission_info: 1,
+  submission_code: 2,
+  test_results: 3,
+  game_end: 4,
+  error_message: 5,
+};
 
 SubmissionState = {
-    in_progess: 0,
-    pending: 1,
-    finished: 2
-}
+  in_progess: 0,
+  pending: 1,
+  finished: 2,
+};
 
 GameState = {
-    in_progess: 0,
-    pending: 1,
-    finished: 2
-}
+  in_progess: 0,
+  pending: 1,
+  finished: 2,
+};
 
 class Game {
-    static submissions = {};
-    static languages = {};
-    static state;
-    static start_time;
-    static end_time;
-    static puzzle;
+  static submissions = {};
+  static languages = {};
+  static state;
+  static start_time;
+  static end_time;
+  static puzzle;
 }
 
 class Session {
-    static ws = null;
-    static connenct() {
-        if (this.ws !== null && (
-            this.ws.readyState === WebSocket.OPEN ||
-            this.ws.readyState === WebSocket.CONNECTING))
-            
-            this.ws.close();            
-        
-        this.ws = new WebSocket("ws://127.0.0.1:8080");
+  static ws = null;
+  static connect() {
+    if (
+      this.ws !== null &&
+      (this.ws.readyState === WebSocket.OPEN ||
+        this.ws.readyState === WebSocket.CONNECTING)
+    )
+      this.ws.close();
 
-        this.ws.addEventListener('open', (event) => {
-            this.ws.send(JSON.stringify({nickname: "Murat", token: "We need to set this in cookies"}));
-        });
-    
+    this.ws = new WebSocket("ws://127.0.0.1:8080");
 
-        this.ws.addEventListener('message', (event) => {
-            let message = JSON.parse(event.data);
-            console.log("recieved a message",message);
-            switch (message.id) {
-                case MessageRecvID.game_info:
-                    Game.languages = message.available_languages,
-                    Game.start_time = message.start_time,
-                    Game.end_time = message.end_time,
-                    Game.state = message.state,    
-                    Game.submissions = message.submissions,
-                    Game.puzzle = message.puzzle;
-                    // Start game / Reset game
-                    break;
-                    
-                case MessageRecvID.submission_info:
-                    let player_nickname = message.player_nickname,
-                        submission = message.submission;
+    this.ws.addEventListener("open", (event) => {
+      this.ws.send(
+        JSON.stringify({
+          nickname: "Murat",
+          token: "We need to set this in cookies",
+        })
+      );
+    });
 
-                    Game.submissions[player_nickname] = submission;
-                    // Update submissions list
-                    break;
+    this.ws.addEventListener("message", (event) => {
+      let message = JSON.parse(event.data);
+      console.log("recieved a message", message);
+      switch (message.id) {
+        case MessageRecvID.game_info:
+          (Game.languages = message.available_languages),
+            (Game.start_time = message.start_time),
+            (Game.end_time = message.end_time),
+            (Game.state = message.state),
+            (Game.submissions = message.submissions),
+            (Game.puzzle = message.puzzle);
+          // Start game / Reset game
+          break;
 
-                case MessageRecvID.submission_code:
-                    let code = message.submission;
-                    player_nickname = message.player_nickname;
+        case MessageRecvID.submission_info:
+          let player_nickname = message.player_nickname,
+            submission = message.submission;
 
-                    Game.submissions[player_nickname].code = code;
-                    
-                    // Update submissions list
-                    break;
+          Game.submissions[player_nickname] = submission;
+          // Update submissions list
+          break;
 
-                case MessageRecvID.test_results:
-                    let results = message.results;
-                    // update testcases success
-                    break;
+        case MessageRecvID.submission_code:
+          let code = message.submission;
+          player_nickname = message.player_nickname;
 
-                case MessageRecvID.game_end:
-                    Game.start_time = message.next_game_start_time;
-                    // update timer
-                    break;
+          Game.submissions[player_nickname].code = code;
 
-                case MessageRecvID.error_message:
-                    let error_message = error_message;
-                    // display the error
-                    break;
+          // Update submissions list
+          break;
 
-                default:
-                    console.error("SOMETHING IS WRONG MONKAS!");
-                    break;
-            }
-        });
-        
-        this.ws.addEventListener('close', (event) => {
-            this.ws = null;
-            // Comeback to the joining page
-        });
-    }
+        case MessageRecvID.test_results:
+          let results = message.results;
+          // update testcases success
+          break;
+
+        case MessageRecvID.game_end:
+          Game.start_time = message.next_game_start_time;
+          // update timer
+          break;
+
+        case MessageRecvID.error_message:
+          let error_message = error_message;
+          // display the error
+          break;
+
+        default:
+          console.error("SOMETHING IS WRONG MONKAS!");
+          break;
+      }
+    });
+
+    this.ws.addEventListener("close", (event) => {
+      this.ws = null;
+      // Comeback to the joining page
+    });
+  }
 }
 
+document.getElementById("start").onclick = () => {
+  const nickname = document.getElementById("nickname").value;
 
-// connect after clicking a connect button?
-Session.connenct();
+  console.log("sup?");
+
+  localStorage.setItem("nickname", nickname);
+
+  if (nickname != "") {
+    // TODO: generate token and send it as well
+    Session.connect(nickname);
+    location.href = "./game.html";
+  }
+};
