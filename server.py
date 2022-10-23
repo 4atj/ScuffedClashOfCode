@@ -16,7 +16,7 @@ from sanic.request import Request
 
 from pistonapi import PistonAPI, PistonError
 from typing import Final
-
+import traceback
 
 piston: Final = PistonAPI()
 app: Final = Sanic("GAME", log_config={"version": 1})
@@ -26,8 +26,13 @@ app.config.WEBSOCKET_PING_TIMEOUT = None  # type: ignore
 
 @app.websocket("/", name='ws')
 async def ws_handler(request: Request, ws: WebsocketImplProtocol):
-    player = Player(ws)
-    await player.ws_handler()
+    try:
+        player = Player(ws)
+        await player.handshake()
+        await player.ws_handler()
+    except Exception as e:
+        traceback.print_exc()
+        raise e
 
 class SubmissionState(IntEnum):
     in_progess = 0
@@ -104,7 +109,7 @@ Language.class_init()
 
 class Submission:
     code: str
-    language: Language
+    language: Optional[Language]
     success: list[bool]
     state: SubmissionState
     finished_time: float
@@ -114,11 +119,12 @@ class Submission:
         self.success = []
         self.state = SubmissionState.in_progess
         self.finished_time = 0.
+        self.language = None
 
     def as_dict(self):
         return {
             "code_length": len(self.code),
-            "language": Language.name,
+            "language": self.language.name if self.language else None,
             "success": self.success,
             "state": self.state.name,
             "finished_time": self.finished_time
@@ -152,6 +158,12 @@ class Validator:
 
         return False, "Internal error"
 
+    def as_dict(self):
+        return {
+            "input": self.input,
+            "output": self.output
+        }
+
 class Puzzle:
     title: str
     statement: str
@@ -172,7 +184,7 @@ class Puzzle:
         return {
             "title": self.title,
             "statement": self.statement,
-            "testcases": self.testcases
+            "testcases": [testcase.as_dict() for testcase in self.testcases]
             }
 
 class Game:
@@ -192,31 +204,36 @@ class Game:
     async def game_loop(cls):
         # Put random puzzle as the previous puzzle although there is no previous puzzle!
         cls.puzzle = choice(Puzzle.puzzles)
+        print("starting game loop!")
 
         while 1:
             # First game shouldn't instantly start
             # that's why we have this order
+            
             cls.state = GameState.finished
             cls.start_time = int(time() + cls.duration_between_games)
             cls.end_time = int(cls.start_time + cls.duration)
             await cls.broadcast({"id": MessageSendID.game_end, "next_game_start_time": cls.start_time})
             await asyncio.sleep(cls.duration_between_games)
+            print("started game!")
             
             cls.state = GameState.in_progress
             cls.submissions = {player: Submission() for player in cls.players}
             cls.puzzle = choice(Puzzle.puzzles)
             await cls.broadcast({cls.game_info_message()})
             await asyncio.sleep(cls.end_time - time() + 3) # 3 extra seconds For communication delay :p
+            print("Game finishing!")
 
             cls.state = GameState.finishing
             for player, submission in cls.submissions.items():
                 if submission.state is not SubmissionState.in_progess:
                     await cls.submit_code(player)
+            print("Game finished!")
             
 
     @classmethod
     async def join(cls, player: Player):
-        player_ = next(player_ for player_ in cls.submissions if player_.nickname == player.nickname)
+        player_ = next((player_ for player_ in cls.submissions if player_.nickname == player.nickname), None)
 
         if player_:
             if player_.token != player.token:
@@ -232,11 +249,12 @@ class Game:
         else:
             cls.submissions[player] = Submission()
 
+        print(f"Player {player.nickname} joined!")
         cls.players.append(player)
         await player.send(cls.game_info_message())
 
     @classmethod
-    async def game_info_message(cls):
+    def game_info_message(cls):
         return {
             "id": MessageSendID.game_info,
             "available_languages": [language.as_dict() for language in Language.languages.values()],
@@ -262,6 +280,9 @@ class Game:
         submission.state = SubmissionState.pending
         await cls.broadcast({"id": MessageSendID.submission_info, "player_nickname": player.nickname, "submission": submission.as_dict()})
 
+        # TODO: change later
+        assert submission.language 
+
         for validator in cls.puzzle.validators:
             success, output = validator.execute(submission.code, submission.language)
             submission.success.append(success)
@@ -274,6 +295,10 @@ class Game:
 
         results = []
         submission = cls.submissions[player]
+
+        # TODO: change later
+        assert submission.language
+
         for validator in cls.puzzle.testcases:
             result = validator.execute(submission.code, submission.language)
             results.append(result)
@@ -315,12 +340,10 @@ class Player:
     
     def __init__(self, ws: WebsocketImplProtocol):
         self.ws = ws
-        asyncio.run(self.handshake())
         
     async def handshake(self):
         message = await self.recv()
 
-        # Didn't give id to handshake!
         if message.keys() != {"nickname","token"} or\
            any(not isinstance(v, str) for v in message.values()):
             await self.send_error("Wrong message structure")
@@ -343,11 +366,13 @@ class Player:
         return message_dict
 
     async def send(self, message: object):
+        message_str = json.dumps(message)
         try:
-            await self.send(json.dumps(message))
-        except:
+            await self.ws.send(message_str)
+        except Exception as e:
             # TODO: handle exceptions
-            pass
+            traceback.print_exc()
+        print("sent",message_str)
 
     async def send_error(self, error_messege: str):
         await self.send({"id":MessageSendID.error_message, "error_message": error_messege})
@@ -406,12 +431,14 @@ def start():
     if app.state.stage is not ServerStage.STOPPED:
         raise Exception("App is already running!")
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.create_task(Game.game_loop())
+    app.add_task(Game.game_loop())
 
     print("GameCodin is running on http://localhost:8080/")
     app.run(host="0.0.0.0", port=8080, workers=1, debug=True, verbosity=1, access_log=False)
 
+def add_puzzles():
+    Puzzle("test","test",[Validator("1","1")],[Validator("1","1")])
+
 if __name__ == "__main__":
+    add_puzzles()
     start()

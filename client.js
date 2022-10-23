@@ -49,13 +49,12 @@ class Session {
         
         this.ws = new WebSocket("ws://127.0.0.1:8080");
 
-        WebSocket.addEventListener('open', (event) => {
-            this.ws.send({nickname: "Murat", token: "We need to set this in cookies"});
-            // send the handshake packet here
+        this.ws.addEventListener('open', (event) => {
+            this.ws.send(JSON.stringify({nickname: "Murat", token: "We need to set this in cookies"}));
         });
     
 
-        WebSocket.addEventListener('message', (event) => {
+        this.ws.addEventListener('message', (event) => {
             let message = JSON.parse(event.data);
             console.log("recieved a message",message);
             switch (message.id) {
@@ -107,7 +106,7 @@ class Session {
             }
         });
         
-        WebSocket.addEventListener('close', (event) => {
+        this.ws.addEventListener('close', (event) => {
             this.ws = null;
             // Comeback to the joining page
         });
