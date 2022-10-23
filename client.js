@@ -83,7 +83,7 @@ class Session {
                     break;
 
                 case MessageRecvID.game_end:
-                    let next_game_start_time = message.next_game_start_time;
+                    Game.start_time = message.next_game_start_time;
                     // update timer
                     break;
 
@@ -91,7 +91,7 @@ class Session {
                     let error_message = error_message;
                     // display the error
                     break;
-                    
+
                 default:
                     console.error("SOMETHING IS WRONG MONKAS!");
                     break;
