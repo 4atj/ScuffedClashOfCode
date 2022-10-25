@@ -9,7 +9,13 @@
   </head>
   <body class="body">
     <div class="center-dings">
-      <input class="flexing" id="nickname" placeholder="nickname bruh" />
+      <label id="nicknamelabel" for="nickname">Enter nickname</label>
+      <input
+        aria-labelledby="nicknamelabel"
+        class="flexing"
+        id="nickname"
+        placeholder="nickname bruh"
+      />
       <div class="fancy-button">
         <button class="flexing" id="start">Start playing</button>
       </div>

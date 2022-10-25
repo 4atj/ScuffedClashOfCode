@@ -50,3 +50,19 @@ body {
   padding: 0.2rem 0.5rem;
   border-radius: 7px;
 }
+
+.container {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  margin: 2rem;
+  padding: 1rem;
+  gap: 2rem;
+}
+
+.editor {
+  display: flex;
+  flex-grow: 1;
+  width: 100%;
+  min-height: 30vh;
+}

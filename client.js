@@ -118,16 +118,19 @@ class Session {
   }
 }
 
-document.getElementById("start").onclick = () => {
-  const nickname = document.getElementById("nickname").value;
+const startButton = document.getElementById("start");
+if (startButton){
+  startButton.onclick = () => {
+    const nickname = document.getElementById("nickname").value;
 
-  console.log("sup?");
+    console.log("sup?");
 
-  localStorage.setItem("nickname", nickname);
+    localStorage.setItem("nickname", nickname);
 
-  if (nickname != "") {
-    // TODO: generate token and send it as well
-    Session.connect(nickname);
-    location.href = "./game.html";
-  }
-};
+    if (nickname != "") {
+      // TODO: generate token and send it as well
+      Session.connect(nickname);
+      location.href = "./game.html";
+    }
+  };
+}

@@ -8,16 +8,21 @@
     <link rel="stylesheet" type="text/css" href="./styles.css" />
   </head>
   <body>
-    <div>testcases and stuff</div>
-    <ul>
-      <li>list item dings</li>
-    </ul>
-    <select>
-      <!-- only option allowed by gorn sadge KEKW -->
-      <option>python</option>
-    </select>
-    <textarea></textarea>
-    <button type="submit">submit answers</button>
+    <div class="container">
+      <label for="languageselect">Choose your programming language</label>
+      <select id="languageselect">
+        <option>python</option>
+      </select>
+
+      <label for="codeeditor">Enter your code</label>
+      <textarea class="editor" id="codeeditor"></textarea>
+      <button type="submit">Submit your code</button>
+
+      <div>testcases and stuff</div>
+      <ul>
+        <li>list item dings</li>
+      </ul>
+    </div>
     <script src="./client.js"></script>
   </body>
 </html>
